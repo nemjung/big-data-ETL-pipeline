@@ -1,0 +1,96 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
+    restart: always
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    healthcheck:
+      test: ["CMD", "echo", "ruok", "|", "nc", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kafka_network
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    networks:
+      - kafka_network
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "kafka:9092", "--list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  cassandra:
+    image: cassandra:latest
+    container_name: cassandra
+    restart: always
+    ports:
+      - "9042:9042"
+    environment:
+      CASSANDRA_CLUSTER_NAME: "BigDataCluster"
+      CASSANDRA_NUM_TOKENS: 256
+      CASSANDRA_START_RPC: "true"
+    healthcheck:
+      test: ["CMD", "echo", "ruok", "|", "nc", "localhost", "2181"]
+      interval: 30s  # เพิ่มเวลารอระหว่างการเช็ค
+      timeout: 20s   # เพิ่มเวลา timeout
+      retries: 10    # เพิ่มจำนวนครั้งที่เช็ค
+    volumes:
+      - ./consumer:/consumer
+    networks:
+      - kafka_network
+
+  producer:
+    build:
+      context: ./producer
+      dockerfile: Dockerfile_producer
+    container_name: kafka_producer
+    volumes:
+      - ./dataset:/dataset
+    env_file:
+      - .env
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BROKER: "kafka:9092"
+    networks:
+      - kafka_network
+    entrypoint: ["/bin/sh", "-c", "sleep 10 && python producer.py"]
+  
+  
+  consumer:
+    build:
+      context: ./consumer
+      dockerfile: Dockerfile_consumer
+    container_name: kafka_consumer
+    depends_on:
+      kafka:
+        condition: service_healthy
+      cassandra:
+        condition: service_healthy
+    env_file:
+      - .env
+    entrypoint: ["python", "-u", "consumer.py"]
+    environment:
+      KAFKA_BROKER: "kafka:9092"
+    networks:
+      - kafka_network
+
+networks:
+  kafka_network:
+    driver: bridge
