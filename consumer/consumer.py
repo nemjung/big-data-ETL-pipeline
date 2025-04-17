@@ -45,7 +45,6 @@ def waitForCassandra():
 
 session = waitForCassandra()
 
-
 insert_query = session.prepare("""
 INSERT INTO cars (
     id, new_used, name, money, exterior_color, interior_color, drivetrain, mpg, 
@@ -57,36 +56,56 @@ INSERT INTO cars (
 );
 """)
 
+def mappingKafkaCassandra(raw):
+    return (
+        uuid.UUID(raw["id"]),
+        raw.get("_c0"),
+        raw.get("_c1"),
+        raw.get("_c2"),
+        raw.get("_c3"),   
+        raw.get("_c4"),
+        raw.get("_c5"),
+        raw.get("_c6"),
+        raw.get("_c7"),
+        raw.get("_c8"),
+        raw.get("_c9"),
+        raw.get("_c10"),
+        raw.get("_c11"),
+        raw.get("_c12"),
+        raw.get("_c13"),
+        raw.get("_c14"),
+        raw.get("_c15"),
+        raw.get("_c16"),
+        raw.get("_c17"),
+        raw.get("_c18"),
+        raw.get("_c19"),
+        raw.get("_c20"),
+        raw.get("_c21"),
+        raw.get("_c22"),
+        raw.get("_c23"),
+    )
+
 BATCH_SIZE = 5000
 batchData = []
-message_limit = 175490 # for exit the loop 
+message_limit = 175490
 message_received = 1
+cout = 1
 
 for message in consumer:
-    if message_received >= message_limit: #when message_received == 175490 exit the loop
-        break 
-    data = message.value
-    data["id"] = uuid.UUID(data["id"])
+    if message_received >= message_limit:
+        break
 
-    batchData.append((
-        data.get("id"),
-        data.get("new&used"), data.get("name"), data.get("money"), data.get("Exterior color"),
-        data.get("Interior color"), data.get("Drivetrain"), data.get("MPG"),
-        data.get("Fuel type"), data.get("Transmission"), data.get("Engine"),
-        data.get("Mileage"), data.get("Convenience"), data.get("Entertainment"),
-        data.get("Exterior"), data.get("Safety"), data.get("Seating"),
-        data.get("Accidents or damage"), data.get("Clean title"),
-        data.get("1-owner vehicle"), data.get("Personal use only"),
-        data.get("brand"), data.get("year"), data.get("Model"), data.get("currency")
-    ))
+    data = message.value
+    batchData.append(mappingKafkaCassandra(data))
 
     if len(batchData) >= BATCH_SIZE:
         print(data)
         execute_concurrent_with_args(session, insert_query, batchData)
-        print(f"Inserted {len(batchData)} rows into Cassandra")
+        print(f"Inserted {len(batchData)} rows into Cassandra (batch {cout})")
         batchData = []
-    message_received += 1
+        cout += 1
 
+    message_received += 1
 
 if batchData:
     execute_concurrent_with_args(session, insert_query, batchData)
